@@ -1,0 +1,19 @@
+{
+  "name": "alpine-docker-packages",
+  "version": "1.0.0",
+  "description": "",
+  "main": "dist/index.js",
+  "keywords": [],
+  "author": "",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@types/node": "^22.7.4",
+    "tsc-watch": "^6.2.0",
+    "typescript": "^5.6.2"
+  },
+  "scripts": {
+    "dev": "PACKAGES_DIR=/tmp/packages tsc-watch --onSuccess \"node ./dist/index.js\""
+  }
+}
