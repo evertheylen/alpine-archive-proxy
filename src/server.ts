@@ -67,16 +67,16 @@ async function getPackage(url: URL, res: ServerResponse) {
 
 
 async function getIndex(url: URL, res: ServerResponse) {
-  const { directory, filename } = getDirectoryAndFilename(url.pathname);
-  const localDir = join(PACKAGES_DIR, directory);
-  
-  console.log("Building index for", localDir);
-  if (!(await fileExists(localDir))) {
-    await buildApkIndex(directory);
+  const { directory: abstractDir, filename } = getDirectoryAndFilename(url.pathname);
+  const localDir = join(PACKAGES_DIR, abstractDir);
+  const localIndexPath = join(localDir, "APKINDEX.tar.gz");
+
+  if (!(await fileExists(localIndexPath))) {
+    await buildApkIndex(abstractDir);
   }
 
   res.writeHead(200, "Found");
-  const stream = createReadStream(join(localDir, "APKINDEX.tar.gz"));
+  const stream = createReadStream(localIndexPath);
   await pipeline(stream, res);
   res.end();
 }
@@ -108,7 +108,7 @@ export async function handle(request: IncomingMessage, response: ServerResponse)
   const url = new URL(`http://localhost${request.url}`);
   const relevantUrl = url.pathname + url.search + url.hash;
   const start = new Date();
-  console.log(`[${start.toISOString()}] ${request.method ?? 'no method'} ${relevantUrl}`)
+  console.log(`[${process.pid} :: ${start.toISOString()}] ${request.method ?? 'no method'} ${relevantUrl}`)
 
   if (request.method === undefined || request.url === undefined || request.method.toUpperCase() !== 'GET') {
     response.writeHead(405, "Method not allowed");
@@ -125,13 +125,23 @@ export async function handle(request: IncomingMessage, response: ServerResponse)
       return await proxyUrl(url, response);
     }
   } catch (error: any) {
-    response.writeHead(500, error?.toString() ?? 'Unknown error');
-    response.end();
+    if (response.headersSent) {
+      console.error(`ERROR for ${url} (after headers were sent):`, error);
+    } else {
+      response.writeHead(500, error?.toString() ?? 'Unknown error');
+      response.end();
+      console.error(`ERROR for ${url}:`, error);
+    }
+    
     return;
   } finally {
+    if (!response.writableEnded) {
+      response.end();
+    }
+
     const end = new Date();
     const ms = (end.getTime() - start.getTime()).toFixed(1);
-    console.log(`[${(new Date()).toISOString()}] ${relevantUrl} <- ${response.statusCode ?? '???'} ${response.statusMessage ?? ''} -- took ${ms}ms`);
+    console.log(`[${process.pid} :: ${(new Date()).toISOString()}] ${relevantUrl} <- ${response.statusCode ?? '???'} ${response.statusMessage ?? ''} -- took ${ms}ms`);
   }
 }
 

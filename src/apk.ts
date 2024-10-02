@@ -52,15 +52,11 @@ export async function findApkDirs(dir: string) {
 
 // Function to run the apk index command
 export async function buildApkIndex(abstractDir: string) {
-  if (!scheduledPathsToRebuild.delete(abstractDir)) {
-    // was not scheduled, don't do anything!
-    return false;
-  }
   const arch = basename(abstractDir);
   const localDir = join(PACKAGES_DIR, abstractDir);
   await ensureDirExists(localDir);
 
-  return await new Promise<boolean>(async (resolve, reject) => {
+  return new Promise<boolean>(async (resolve, reject) => {
     try {
       // Get the list of .apk files in the directory
       const files = (await readdir(localDir)).filter(file => file.endsWith('.apk')).map(file => `./${file}`);
@@ -71,7 +67,8 @@ export async function buildApkIndex(abstractDir: string) {
       const writeStream = createWriteStream(localDir + '/ORIG_APKINDEX.tar.gz');
       await pipeline(req, writeStream);
 
-      const args = ['index', '--no-interactive', '--merge', '-x', 'ORIG_APKINDEX.tar.gz', '-o', 'APKINDEX.tar.gz', '--rewrite-arch', arch, ...files];
+      // TODO: --allow-untrusted necessary for old Alpine versions?
+      const args = ['index', '--allow-untrusted', '--no-interactive', '--merge', '-x', 'ORIG_APKINDEX.tar.gz', '-o', 'APKINDEX.tar.gz', '--rewrite-arch', arch, ...files];
       const apkIndexProcess = spawn('apk', args, { cwd: localDir });
 
       // apkIndexProcess.stdout.on('data', (data) => {
@@ -89,7 +86,7 @@ export async function buildApkIndex(abstractDir: string) {
           console.log(`Successfully indexed .apk files in ${localDir} for architecture ${arch}`);
           resolve(true);
         } else {
-          throw new Error(`apk index process exited with code ${code}`);
+          reject(new Error(`apk index process exited with code ${code}`));
         }
       });
     } catch (error) {
