@@ -1,11 +1,38 @@
-import { createServer, IncomingMessage, ServerResponse } from 'http';
+import { IncomingMessage, ServerResponse } from 'http';
 import { maybeStreamFile } from './files.js';
-import { stat } from 'fs/promises';
 import { getProxiedIndex, getProxiedPackage, proxyUrl } from './proxy_repo.js';
 import { getLocalIndex, getLocalPackage } from './local_repo.js';
+import { logins } from './index.js';
 
 
 const APKINDEX = '/APKINDEX.tar.gz';
+
+
+export function isValidLogin(authorizationHeader: string | undefined, response: ServerResponse): boolean {
+  if (logins === null) {
+    return true;
+  }
+
+  if (authorizationHeader === undefined) {
+    response.writeHead(401, "Provide authn details");
+    return false;
+  }
+
+  const [basic, encodedToken] = authorizationHeader.split(/\s+/);
+  if (basic === undefined || basic?.toLowerCase() !== 'basic' || encodedToken === undefined) {
+    response.writeHead(401, "Wrong authn type");
+    return false;
+  }
+
+  const token = Buffer.from(encodedToken, 'base64').toString();
+
+  if (logins.has(token)) {
+    return true;
+  } else {
+    response.writeHead(401, "Wrong user:password combo");
+    return false;
+  }
+}
 
 
 export async function handle(request: IncomingMessage, response: ServerResponse) {
@@ -14,13 +41,17 @@ export async function handle(request: IncomingMessage, response: ServerResponse)
   const start = new Date();
   console.log(`[${process.pid} :: ${start.toISOString()}] ${request.method ?? 'no method'} ${relevantUrl}`)
 
-  if (request.method === undefined || request.url === undefined || request.method.toUpperCase() !== 'GET') {
-    response.writeHead(405, "Method not allowed");
-    response.end();
-    return;
-  }
-
   try {
+    if (request.method === undefined || request.url === undefined || request.method.toUpperCase() !== 'GET') {
+      response.writeHead(405, "Method not allowed");
+      return;
+    }
+  
+    if (!isValidLogin(request.headers['authorization'], response)) {
+      return;
+    }
+
+
     // routing!
     if (url.pathname === '/' || url.pathname === '') {
       // --- INDEX ---
@@ -28,7 +59,7 @@ export async function handle(request: IncomingMessage, response: ServerResponse)
       response.end(
         '<html><head><title>alpine-archive-proxy</title></head>'
         + '<body>This server is running <a href="https://github.com/evertheylen/alpine-archive-proxy">alpine-archive-proxy</a>.<br/>'
-        + 'Interesting URLs may be <a href="/proxied">/proxied</a>, <a href="/local">/local</a>, and <a href="/public_key">/public_key</a>.'
+        + 'Interesting URLs may be <a href="/proxied/">/proxied/</a>, <a href="/local/">/local/</a>, and <a href="/public_key">/public_key</a>.'
         + '</body></html>'
       );
     } else if (url.pathname === '/public_key' || url.pathname === '/public_key.pub') {

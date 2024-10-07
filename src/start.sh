@@ -20,4 +20,4 @@ echo "-----END PRIVATE KEY-----" >> /private_key.rsa
 openssl rsa -in /private_key.rsa -pubout -out /public_key.pub
 
 # Run the actual server
-NODE_ENV=development node ./dist/index.js
+NODE_ENV=production node ./dist/index.js

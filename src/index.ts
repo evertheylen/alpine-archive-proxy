@@ -12,6 +12,7 @@ let restarts = 0;
 let lastDeath = new Date();
 let happyRestartTimeout: NodeJS.Timeout | undefined;
 let shuttingDown = false;
+export let logins: Set<string> | null = null;
 
 const parallelism = availableParallelism();
 
@@ -20,6 +21,15 @@ const parallelism = availableParallelism();
 // }
 
 let server: Server | undefined;
+
+if (process.env.HTTP_AUTH) {
+  if (cluster.isPrimary) {
+    console.log("Configuring HTTP AUTH")
+  }
+
+  const auth = process.env.HTTP_AUTH;
+  logins = new Set(auth.split(','));
+}
 
 if (parallelism === 1 || !cluster.isPrimary) {
   server = createServer(handle);
