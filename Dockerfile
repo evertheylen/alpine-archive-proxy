@@ -8,8 +8,7 @@ FROM node:22-alpine3.19
 # ENV PATH="$PNPM_HOME:$PATH"
 # RUN corepack enable
 
-# RUN apk update && \
-#   apk add --no-cache gcc musl-dev libffi-dev openssl-dev sqlite-dev nginx curl bash python3
+RUN apk add --no-cache abuild
 
 RUN mkdir -p /packages
 RUN mkdir -p /app
@@ -19,11 +18,12 @@ COPY ./package.json /app/package.json
 WORKDIR /app
 # RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --prod --frozen-lockfile
 
+COPY ./src/start.sh /app/start.sh
 COPY ./dist/ /app/dist/
 
 ENV PACKAGES_DIR=/packages
 
 EXPOSE 80
 
-CMD ["node", "./dist/index.js"]
+CMD ["bash", "/app/start.sh"]
 

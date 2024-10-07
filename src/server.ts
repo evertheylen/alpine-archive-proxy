@@ -1,107 +1,11 @@
 import { createServer, IncomingMessage, ServerResponse } from 'http';
-import { pipeline } from 'stream/promises';
-import { request } from './http.js';
-import { dirname, join } from 'path';
-import { ensureDirExists, fileExists, getDirectoryAndFilename } from './files.js';
-import { createReadStream, createWriteStream } from 'fs';
-import { buildApkIndex, newPackageAdded } from './apk.js';
+import { maybeStreamFile } from './files.js';
+import { stat } from 'fs/promises';
+import { getProxiedIndex, getProxiedPackage, proxyUrl } from './proxy_repo.js';
+import { getLocalIndex, getLocalPackage } from './local_repo.js';
 
 
-export const EXTERNAL_BASE_URL = "http://dl-cdn.alpinelinux.org/alpine";
-export const PACKAGES_DIR = process.env.PACKAGES_DIR ?? '/packages';
-
-
-async function getPackage(url: URL, res: ServerResponse) {
-  const { directory, filename } = getDirectoryAndFilename(url.pathname);
-  const localFilePath = join(PACKAGES_DIR, url.pathname);
-  await ensureDirExists(dirname(localFilePath));
-
-  if (await fileExists(localFilePath)) {
-    // Send local file with Node streams
-    res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'X-Fetched-From': 'local' });
-    try {
-      await pipeline(createReadStream(localFilePath), res);
-    } catch (err) {
-      console.error('Error sending local file:', err);
-      // skipping...
-    }
-    res.end();
-  } else {
-    // Fetch from external URL and store locally
-    const externalUrl = EXTERNAL_BASE_URL + directory + '/' + filename;
-
-    try {
-      const externalReq = await request(externalUrl);
-
-      if (externalReq.statusCode === 200) {
-        res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'X-Fetched-From': EXTERNAL_BASE_URL });
-  
-        const writeStream = createWriteStream(localFilePath);
-        try {
-          // Stream to both client and file
-          await Promise.all([
-            pipeline(externalReq, res),
-            pipeline(externalReq, writeStream)
-          ]);
-          res.end();
-        } catch (err) {
-          console.error('Error fetching and storing file:', err);
-          res.writeHead(500);
-          res.end('Error during file handling');
-          writeStream.destroy();
-        }
-        
-        // notify we got a new package
-        await newPackageAdded(directory);
-      } else {
-        res.writeHead(externalReq.statusCode || 500);
-        res.end('Error downloading file');
-      }
-    } catch (err) {
-      console.error('Error with external request:', err);
-      res.writeHead(500);
-      res.end('Error fetching file');
-    }
-  }
-}
-
-
-async function getIndex(url: URL, res: ServerResponse) {
-  const { directory: abstractDir, filename } = getDirectoryAndFilename(url.pathname);
-  const localDir = join(PACKAGES_DIR, abstractDir);
-  const localIndexPath = join(localDir, "APKINDEX.tar.gz");
-
-  if (!(await fileExists(localIndexPath))) {
-    await buildApkIndex(abstractDir);
-  }
-
-  res.writeHead(200, "Found");
-  const stream = createReadStream(localIndexPath);
-  await pipeline(stream, res);
-  res.end();
-}
-
-
-async function proxyUrl(url: URL, res: ServerResponse) {
-  const externalUrl = EXTERNAL_BASE_URL + url.pathname;
-
-  try {
-    const externalReq = await request(externalUrl, {ignoreError: true});
-    res.writeHead(externalReq.statusCode || 500, externalReq.headers);
-
-    try {
-      await pipeline(externalReq, res, {});
-    } catch (err) {
-      console.error('Error while proxying:', err);
-      res.end();
-      // ignoring
-    }
-  } catch (err) {
-    console.error('Error fetching file:', err);
-    res.writeHead(500);
-    res.end(`Error fetching file: ${err}`);
-  }
-}
+const APKINDEX = '/APKINDEX.tar.gz';
 
 
 export async function handle(request: IncomingMessage, response: ServerResponse) {
@@ -117,12 +21,45 @@ export async function handle(request: IncomingMessage, response: ServerResponse)
   }
 
   try {
-    if (url.pathname.endsWith('.apk')) {
-      return await getPackage(url, response);
-    } else if (url.pathname.endsWith('/APKINDEX.tar.gz')) {
-      return await getIndex(url, response);
-    } else {
-      return await proxyUrl(url, response);
+    // routing!
+    if (url.pathname === '/' || url.pathname === '') {
+      // --- INDEX ---
+      response.writeHead(200, 'OK', {'content-type': 'text/html'});
+      response.end(
+        '<html><head><title>alpine-archive-proxy</title></head>'
+        + '<body>This server is running <a href="https://github.com/evertheylen/alpine-archive-proxy">alpine-archive-proxy</a>.<br/>'
+        + 'Interesting URLs may be <a href="/proxied">/proxied</a>, <a href="/local">/local</a>, and <a href="/public_key">/public_key</a>.'
+        + '</body></html>'
+      );
+    } else if (url.pathname === '/public_key' || url.pathname === '/public_key.pub') {
+      // --- PUBLIC KEY ---
+      await maybeStreamFile('/public_key.pub', response);
+
+    } else if (url.pathname.startsWith('/proxied')) {
+      const path = url.pathname.slice('/proxied'.length);
+
+      // --- PROXIED REPOs ---
+      if (path.endsWith('.apk')) {
+        return await getProxiedPackage(path, response);
+      } else if (path.endsWith(APKINDEX)) {
+        return await getProxiedIndex(path.slice(0, -APKINDEX.length), response);
+      } else {
+        return await proxyUrl(path, response);
+      }
+
+    } else if (url.pathname.startsWith('/local')) {
+      const path = url.pathname.slice('/local'.length);
+
+      // --- LOCAL REPOS ---
+      if (url.pathname.endsWith('.apk')) {
+        return await getLocalPackage(path, response);
+      } else if (url.pathname.endsWith(APKINDEX)) {
+        return await getLocalIndex(path.slice(0, -APKINDEX.length), response);
+      } else {
+        response.writeHead(404, "Wrong filetype");
+        response.end();
+        return;
+      }
     }
   } catch (error: any) {
     if (response.headersSent) {
@@ -132,50 +69,14 @@ export async function handle(request: IncomingMessage, response: ServerResponse)
       response.end();
       console.error(`ERROR for ${url}:`, error);
     }
+    console.error("STACK:", error.stack);
     
     return;
   } finally {
-    if (!response.writableEnded) {
-      response.end();
-    }
+    response.end();
 
     const end = new Date();
     const ms = (end.getTime() - start.getTime()).toFixed(1);
     console.log(`[${process.pid} :: ${(new Date()).toISOString()}] ${relevantUrl} <- ${response.statusCode ?? '???'} ${response.statusMessage ?? ''} -- took ${ms}ms`);
   }
 }
-
-
-// async function startServer() {
-//   try {
-//     // Your existing server code here
-//     const server = createServer(handle);
-//     server.listen(PORT, () => {
-//       console.log(`Server running on http://localhost:${PORT}`);
-//     });
-
-//     // Handle shutdown gracefully
-//     process.on('SIGINT', () => {
-//       console.log('Shutting down...');
-//       server.close(() => {
-//         console.log('Server closed');
-//         process.exit(0);
-//       });
-//     });
-//   } catch (error) {
-//     console.error('Error starting server:', error);
-//     // Wait for a bit before restarting to avoid rapid crashes
-//     setTimeout(startServer, 500);
-//   }
-// };
-
-// // Initial server start
-// process.on('uncaughtException', (err) => {
-//   console.error('Uncaught Exception:', err);
-// });
-
-// process.on('unhandledRejection', (reason, promise) => {
-//   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-// });
-
-// startServer();

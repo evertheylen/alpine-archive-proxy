@@ -67,7 +67,7 @@ if (parallelism === 1 || !cluster.isPrimary) {
 }
 
 if (cluster.isWorker) {
-  console.log(`worker: \t worker ${process.pid} started`);
+  console.log(`worker: \t Worker ${process.pid} started`);
 } else {
   console.log(`primary:\t Listening on localhost:${PORT}`);
 }
