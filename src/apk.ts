@@ -2,7 +2,7 @@ import { readdir, stat } from 'fs/promises';
 import { join, basename } from 'path';
 import { spawn, SpawnOptionsWithoutStdio } from 'child_process';
 import { request } from './http.js';
-import { EXTERNAL_BASE_URL, LOCAL_PACKAGES_DIR, PROXIED_PACKAGES_DIR } from './constants.js';
+import { EXTERNAL_BASE_URL, LOCAL_PACKAGES_DIR, PRIV_KEY_PATH, PROXIED_PACKAGES_DIR } from './constants.js';
 import { createWriteStream } from 'fs';
 import { pipeline } from 'stream/promises';
 import { ensureDirExists, maybeStat, safeJoin, streamFile } from './files.js';
@@ -95,7 +95,7 @@ export async function buildProxiedApkIndex(abstractDir: string) {
   console.log(`Successfully indexed .apk files in ${localDir} for architecture ${arch}`);
 
   await runCommand(
-    ['abuild-sign', '-k', '/private_key.rsa', `${localDir}/APKINDEX.tar.gz`]
+    ['abuild-sign', '-k', PRIV_KEY_PATH, `${localDir}/APKINDEX.tar.gz`]
   );
   console.log(`Successfully signed APKINDEX in ${localDir} for architecture ${arch}`);
 }
@@ -114,7 +114,7 @@ export async function buildLocalApkIndex(abstractDir: string) {
   console.log(`Successfully indexed .apk files in ${localDir} for architecture ${arch}`);
 
   await runCommand(
-    ['abuild-sign', '-k', '/private_key.rsa', `${localDir}/APKINDEX.tar.gz`]
+    ['abuild-sign', '-k', PRIV_KEY_PATH, `${localDir}/APKINDEX.tar.gz`]
   );
   console.log(`Successfully signed APKINDEX in ${localDir} for architecture ${arch}`);
 }

@@ -3,6 +3,7 @@ import { maybeStreamFile } from './files.js';
 import { getProxiedIndex, getProxiedPackage, proxyUrl } from './proxy_repo.js';
 import { getLocalIndex, getLocalPackage } from './local_repo.js';
 import { logins } from './index.js';
+import { PUB_KEY_PATH } from './constants.js';
 
 
 const APKINDEX = '/APKINDEX.tar.gz';
@@ -59,12 +60,12 @@ export async function handle(request: IncomingMessage, response: ServerResponse)
       response.end(
         '<html><head><title>alpine-archive-proxy</title></head>'
         + '<body>This server is running <a href="https://github.com/evertheylen/alpine-archive-proxy">alpine-archive-proxy</a>.<br/>'
-        + 'Interesting URLs may be <a href="/proxied/">/proxied/</a>, <a href="/local/">/local/</a>, and <a href="/public_key">/public_key</a>.'
+        + `Interesting URLs may be <a href="/proxied/">/proxied/</a>, <a href="/local/">/local/</a>, and <a href="${PUB_KEY_PATH}">${PUB_KEY_PATH}</a>.`
         + '</body></html>'
       );
-    } else if (url.pathname === '/public_key' || url.pathname === '/public_key.pub') {
+    } else if (url.pathname === PUB_KEY_PATH) {
       // --- PUBLIC KEY ---
-      await maybeStreamFile('/public_key.pub', response);
+      await maybeStreamFile(PUB_KEY_PATH, response);
 
     } else if (url.pathname.startsWith('/proxied')) {
       const path = url.pathname.slice('/proxied'.length);
