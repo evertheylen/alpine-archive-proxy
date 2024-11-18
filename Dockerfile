@@ -2,7 +2,8 @@
 
 FROM node:22-alpine3.20
 
-RUN apk add --no-cache abuild
+# rsync is useful to sync local packages
+RUN apk add --no-cache abuild rsync
 
 RUN mkdir -p /packages
 RUN mkdir -p /app

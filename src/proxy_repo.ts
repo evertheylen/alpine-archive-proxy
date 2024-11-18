@@ -18,7 +18,7 @@ export async function getProxiedPackage(path: string, res: ServerResponse) {
 
   if (fileInfo !== null && fileInfo.isFile()) {
     // Send local file with Node streams
-    await streamFile(filename, res, {
+    await streamFile(localFilePath, res, {
       'content-type': 'application/octet-stream',
       'content-length': fileInfo.size,
       'x-fetched-from': 'local',

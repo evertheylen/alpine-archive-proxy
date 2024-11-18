@@ -87,7 +87,6 @@ export async function buildProxiedApkIndex(abstractDir: string) {
   const writeStream = createWriteStream(localDir + '/ORIG_APKINDEX.tar.gz');
   await pipeline(req, writeStream);
 
-  // TODO: --allow-untrusted necessary for old Alpine versions?
   await runCommand(
     ['apk', 'index', '--no-interactive', '--merge', '-x', 'ORIG_APKINDEX.tar.gz', '-o', 'APKINDEX.tar.gz', '--rewrite-arch', arch, ...files],
     { cwd: localDir }
@@ -108,7 +107,7 @@ export async function buildLocalApkIndex(abstractDir: string) {
   const files = (await readdir(localDir)).filter(file => file.endsWith('.apk')).map(file => `./${file}`);
 
   await runCommand(
-    ['apk', 'index', '--no-interactive', '-o', 'APKINDEX.tar.gz', ...files],
+    ['apk', 'index', '--allow-untrusted', '--no-interactive', '-o', 'APKINDEX.tar.gz', '--rewrite-arch', arch, ...files],
     { cwd: localDir }
   );
   console.log(`Successfully indexed .apk files in ${localDir} for architecture ${arch}`);
@@ -126,13 +125,12 @@ export async function getIndex(abstractDir: string, res: ServerResponse, type: '
   const localIndexPath = safeJoin(localDir, "APKINDEX.tar.gz");
   const pathInfo = await maybeStat(localDir);
   if (pathInfo === null) {
-    if (type === 'local') {
-      res.writeHead(404, 'Not Found');
-      res.end();
-      return;
-    } else {
-      await ensureDirExists(localDir);
-    }
+    // if (type === 'local') {
+    //   res.writeHead(404, 'Not Found');
+    //   res.end();
+    //   return;
+    // }
+    await ensureDirExists(localDir);
   } else if (!pathInfo.isDirectory) {
     res.writeHead(500, "Need a directory to build index");
     return;
